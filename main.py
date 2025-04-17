@@ -5,6 +5,11 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 import base64, uuid, tempfile, os
 
+import httpx
+from fastapi import Request
+
+PUBMED_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+
 app = FastAPI()
 jobs = {}
 class PPTReq(BaseModel):
@@ -42,3 +47,17 @@ def worker(job_id, pmids, email, auth):
 @app.get("/jobs/{job_id}")
 def job(job_id: str):
     return jobs.get(job_id) or HTTPException(404, "not found")
+
+@app.api_route("/pubmed/{path:path}", methods=["GET"])
+async def proxy_pubmed(path: str, request: Request):
+    """
+    ChatGPT から来た /pubmed/xxx をそのまま PubMed E-Utilities へ転送して
+    レスポンスを返すだけの超シンプルなプロキシ。
+    """
+    params = dict(request.query_params)
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{PUBMED_BASE}/{path}", params=params, timeout=30)
+    # content-type をそのまま引き継ぐ
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type"))
+
