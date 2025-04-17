@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Header, BackgroundTasks, HTTPException, Response
 from pydantic import BaseModel
 from pptx import Presentation
 from sendgrid import SendGridAPIClient
@@ -26,6 +26,22 @@ async def generate(req: PPTReq,
     return {"jobId": job_id, "message": "started"}
 
 def worker(job_id, pmids, email, auth):
+    try:
+        print("WORKER START", job_id, email)          # ←1
+        jobs[job_id] = {"status": "running"}
+        token = os.getenv("SENDGRID_API_KEY") or auth.split()[-1]
+        print("TOKEN_BEGINS_WITH", token[:10])        # ←2
+
+        # （PPT 作成処理はそのまま）
+        sg = SendGridAPIClient(api_key=token)
+        response = sg.send(msg)
+        print("SENDGRID STATUS", response.status_code, response.body)  # ←3
+
+        jobs[job_id]["status"] = "finished"
+    except Exception as e:
+        print("WORKER ERROR", e)                      # ←4
+        jobs[job_id] = {"status": "error", "error": str(e)}
+    
     jobs[job_id]["status"] = "running"
     prs = Presentation(); slide = prs.slides.add_slide(prs.slide_layouts[1])
     slide.shapes.title.text = "自動生成 PPT"
